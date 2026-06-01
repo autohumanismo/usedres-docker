@@ -2,6 +2,9 @@
 
 **Portable Docker Resource Monitor** — lightweight, zero-dependency monitoring tool for Docker hosts.
 
+<img width="719" height="651" alt="image" src="https://github.com/user-attachments/assets/a59fadfc-eaa9-4eb5-b9b0-f0013396fbc6" />
+
+
 Works on **Linux**, **WSL**, and **macOS** (Docker Desktop) with a single script.
 
 ![Python](https://img.shields.io/badge/python-3.6+-blue.svg)
