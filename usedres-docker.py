@@ -1,21 +1,107 @@
 #!/usr/bin/env python3
 """
-
 usedres-docker.py - Used Resources by Docker
-
-Should works on: Linux, WSL, macOS (Docker Desktop)
 
 Author: x.com/autohumanismo
 License: MIT
-
-version 0.1
-
+version 1.6
 """
 
 import subprocess
 import json
 from datetime import datetime
 from collections import defaultdict
+
+
+def format_ram_gib_or_mib(gib: float) -> str:
+    if gib >= 1.0:
+        return f"{gib:.2f} GiB"
+    else:
+        mib = gib * 1024
+        return f"{mib:.0f} MiB"
+
+
+def parse_mem_limit(mem_str: str) -> float:
+    try:
+        if '/' not in mem_str:
+            return 0.0
+        limit_part = mem_str.split('/')[1].strip()
+        if 'GiB' in limit_part:
+            return float(limit_part.replace('GiB', ''))
+        elif 'MiB' in limit_part:
+            return float(limit_part.replace('MiB', '')) / 1024
+        return 0.0
+    except:
+        return 0.0
+
+
+def get_block_bar(percent: str) -> str:
+    try:
+        p = float(percent.strip('%'))
+        if p < 1.0:
+            return " "
+        elif p >= 87.5:
+            return "█"
+        elif p >= 75.0:
+            return "▇"
+        elif p >= 62.5:
+            return "▆"
+        elif p >= 50.0:
+            return "▅"
+        elif p >= 37.5:
+            return "▄"
+        elif p >= 25.0:
+            return "▃"
+        elif p >= 12.5:
+            return "▂"
+        else:
+            return "▁"
+    except:
+        return " "
+
+
+def create_memory_bar(total_gib: float, used_gib: float, free_gib: float, available_gib: float, width: int = 50):
+    if total_gib <= 0:
+        return "[" + "_" * width + "]"
+    used_width = max(0, int((used_gib / total_gib) * width))
+    avail_width = max(0, int((available_gib / total_gib) * width))
+    free_width = width - used_width - avail_width
+
+    if free_gib > 0 and free_width < 1:
+        free_width = 1
+    if available_gib > 0 and avail_width < 1 and free_width > 1:
+        avail_width = 1
+        free_width -= 1
+
+    bar = "░" * used_width + "⣿" * avail_width + "_" * free_width
+    return f"[{bar}]"
+
+
+def get_system_memory():
+    try:
+        result = subprocess.run(['free', '-b'], capture_output=True, text=True, check=True)
+        lines = result.stdout.strip().split('\n')
+        mem_line = lines[1].split()
+        swap_line = lines[2].split() if len(lines) > 2 else None
+
+        total = int(mem_line[1]) / (1024**3)
+        used = int(mem_line[2]) / (1024**3)
+        free = int(mem_line[3]) / (1024**3)
+        available = int(mem_line[6]) / (1024**3) if len(mem_line) > 6 else 0
+
+        swap_total = int(swap_line[1]) / (1024**3) if swap_line else 0
+        swap_used = int(swap_line[2]) / (1024**3) if swap_line else 0
+
+        return {
+            'total': round(total, 2),
+            'used': round(used, 2),
+            'free': round(free, 2),
+            'available': round(available, 2),
+            'swap_total': round(swap_total, 2),
+            'swap_used': round(swap_used, 2)
+        }
+    except:
+        return None
 
 
 def get_docker_stats():
@@ -84,64 +170,6 @@ def get_container_networks():
         return []
 
 
-def get_system_memory():
-    """Portable memory info (Linux/WSL + macOS fallback)"""
-    # Try Linux first (including WSL)
-    try:
-        result = subprocess.run(['free', '-b'], capture_output=True, text=True, check=True)
-        lines = result.stdout.strip().split('\n')
-        mem_line = lines[1].split()
-        total = int(mem_line[1]) / (1024**3)
-        used = int(mem_line[2]) / (1024**3)
-        free = int(mem_line[3]) / (1024**3)
-        available = int(mem_line[6]) / (1024**3)
-        return {
-            'total': round(total, 2),
-            'used': round(used, 2),
-            'free': round(free, 2),
-            'available': round(available, 2)
-        }
-    except:
-        pass
-
-    # Fallback for macOS
-    try:
-        # Get total physical memory
-        total_result = subprocess.run(['sysctl', '-n', 'hw.memsize'], capture_output=True, text=True, check=True)
-        total_bytes = int(total_result.stdout.strip())
-        total = total_bytes / (1024**3)
-
-        # Get memory usage via vm_stat
-        vm_result = subprocess.run(['vm_stat'], capture_output=True, text=True, check=True)
-        vm_lines = vm_result.stdout.strip().split('\n')
-
-        page_size = 4096  # default, will try to detect
-        for line in vm_lines:
-            if 'page size of' in line:
-                page_size = int(line.split()[-2])
-                break
-
-        free_pages = 0
-        for line in vm_lines:
-            if 'Pages free:' in line:
-                free_pages = int(line.split(':')[1].strip().replace('.', ''))
-            elif 'Pages speculative:' in line:
-                free_pages += int(line.split(':')[1].strip().replace('.', ''))
-
-        used = (total_bytes - (free_pages * page_size)) / (1024**3)
-        free = (free_pages * page_size) / (1024**3)
-        available = free
-
-        return {
-            'total': round(total, 2),
-            'used': round(used, 2),
-            'free': round(free, 2),
-            'available': round(available, 2)
-        }
-    except:
-        return None
-
-
 def mem_to_mb(mem_str):
     try:
         val = mem_str.split('/')[0].strip()
@@ -157,49 +185,40 @@ def mem_to_mb(mem_str):
 def main():
     print(f"\n=== Docker Resource Monitor - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ===")
 
-    # System Memory
     sys_mem = get_system_memory()
     if sys_mem:
-        print(f"System Total     : {sys_mem['total']} GiB")
-        print(f"System Used      : {sys_mem['used']} GiB")
-        print(f"System Available : {sys_mem['available']} GiB")
-        print(f"System Free      : {sys_mem['free']} GiB\n")
-    else:
-        print("System memory: Not available on this platform\n")
+        print(f"System Used (░) / Total ([])    : {format_ram_gib_or_mib(sys_mem['used'])} / {format_ram_gib_or_mib(sys_mem['total'])}")
+        print(f"System Available (⣿) / Free (_) : {format_ram_gib_or_mib(sys_mem['available'])} / {format_ram_gib_or_mib(sys_mem['free'])}")
 
-    # Docker Networks with Utilized count
+        bar = create_memory_bar(sys_mem['total'], sys_mem['used'], sys_mem['free'], sys_mem['available'])
+        print(bar)
+        print()
+
+    # === Docker Networks ===
     networks = get_docker_networks()
     container_nets = get_container_networks()
 
-    network_count = defaultdict(int)
+    net_to_containers = defaultdict(list)
     for c in container_nets:
         for net in c['networks'].split(','):
             net = net.strip()
             if net:
-                network_count[net] += 1
+                net_to_containers[net].append(c['name'])
 
     if networks:
-        print("=== Docker Networks ===")
-        print(f"{'Name':<28} {'Driver':<12} {'Scope':<10} {'Utilized':>8}")
-        print("-" * 60)
+        print(f"=== Docker Networks ({len(networks)}) ===")
+        print(f"{'Name':<22} {'Driver':<8} {'Scope':<8} Containers")
+        print("-" * 80)
         for net in networks:
-            util = network_count.get(net['name'], 0)
-            util_str = str(util) if util > 0 else "-"
-            print(f"{net['name']:<28} {net['driver']:<12} {net['scope']:<10} {util_str:>8}")
-        print("-" * 60)
-        print(f"Total networks: {len(networks)}\n")
-
-    # Container / Network Mapping
-    if container_nets:
-        print("=== Container / Network Mapping ===")
-        print(f"{'Container':<22} {'Networks'}")
-        print("-" * 60)
-        for c in container_nets:
-            print(f"{c['name']:<22} {c['networks']}")
-        print("-" * 60)
+            name = net['name']
+            driver = net['driver']
+            scope = net['scope']
+            cont_list = " ".join(sorted(net_to_containers.get(name, []))) if net_to_containers.get(name) else ""
+            print(f"{name:<22} {driver:<8} {scope:<8} {cont_list}")
+        print("-" * 80)
         print()
 
-    # Docker Containers (sorted by memory)
+    # === Docker Containers ===
     containers = get_docker_stats()
     if not containers:
         print("No running containers found.")
@@ -207,25 +226,33 @@ def main():
 
     containers.sort(key=lambda x: mem_to_mb(x['mem_usage']), reverse=True)
 
+    print(f"=== Docker containers ({len(containers)}) ===")
     print(f"{'Container':<20} {'CPU %':<10} {'Memory Usage':<28} {'Mem %':<10} {'PIDs'}")
-    print("-" * 88)
+    print("-" * 80)
     docker_total_mb = 0.0
+    docker_max_gib = 0.0
     for c in containers:
         name = c['name'][:19]
         mem_str = c['mem_usage']
-        print(f"{name:<20} {c['cpu']:<10} {mem_str:<28} {c['mem_perc']:<10} {c['pids']}")
+        cpu_bar = get_block_bar(c['cpu'])
+        mem_bar = get_block_bar(c['mem_perc'])
+
+        print(f"{name:<20} {cpu_bar} {c['cpu']:<8} {mem_str:<28} {mem_bar} {c['mem_perc']:<8} {c['pids']}")
         docker_total_mb += mem_to_mb(mem_str)
+        docker_max_gib += parse_mem_limit(mem_str)
 
     docker_total_gib = docker_total_mb / 1024
-    print("-" * 88)
-    print(f"Total containers : {len(containers)}")
-    print(f"Docker Total     : {docker_total_gib:.2f} GiB")
+
+    print("-" * 80)
+    print(f"Docker Total / Max : {docker_total_gib:.2f} GiB / {format_ram_gib_or_mib(docker_max_gib)}")
 
     if sys_mem:
-        non_docker = sys_mem['used'] - docker_total_gib
-        print(f"Non-Docker       : {non_docker:.2f} GiB")
-        print(f"Combined         : {sys_mem['used']:.2f} GiB / {sys_mem['total']:.2f} GiB")
+        non_docker_gib = sys_mem['used'] - docker_total_gib
+        print(f"Non-Docker         : {format_ram_gib_or_mib(non_docker_gib)}")
+        print(f"Swap Used / Total  : {format_ram_gib_or_mib(sys_mem['swap_used'])} / {format_ram_gib_or_mib(sys_mem['swap_total'])}")
 
 
 if __name__ == "__main__":
     main()
+
+
