@@ -2,7 +2,8 @@
 
 **Portable Docker Resource Monitor** — lightweight, zero-dependency monitoring tool for Docker hosts.
 
-<img width="719" height="651" alt="image" src="https://github.com/user-attachments/assets/a59fadfc-eaa9-4eb5-b9b0-f0013396fbc6" />
+<img width="1221" height="641" alt="image" src="https://github.com/user-attachments/assets/8212b9eb-9b12-47cd-8454-e5cb2fcf4b84" />
+
 
 
 Works on **Linux**, **WSL**, and **macOS** (Docker Desktop) with a single script.
@@ -15,7 +16,6 @@ Works on **Linux**, **WSL**, and **macOS** (Docker Desktop) with a single script
 ## Features
 
 - System memory usage (total / used / available / free)
-- Docker networks overview with **Utilized** column (shows how many containers use each network)
 - Container-to-network mapping
 - Per-container resource usage (CPU %, Memory, PIDs)
 - Sorted by memory usage (highest consumers first)
